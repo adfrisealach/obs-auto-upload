@@ -36,6 +36,8 @@ MIN_FILE_SIZE_MB="${MIN_FILE_SIZE_MB:-1}"
 STABILITY_TIMEOUT="${STABILITY_TIMEOUT:-45}"
 MAX_WAIT_TIME="${MAX_WAIT_TIME:-7200}"
 CHECK_INTERVAL="${CHECK_INTERVAL:-10}"
+ENABLE_UPLOAD_CONFIRMATION="${ENABLE_UPLOAD_CONFIRMATION:-false}"
+CONFIRMATION_DELAY_SECONDS="${CONFIRMATION_DELAY_SECONDS:-60}"
 UPLOAD_TRANSFERS="${UPLOAD_TRANSFERS:-6}"
 UPLOAD_CHECKERS="${UPLOAD_CHECKERS:-8}"
 CHUNK_SIZE="${CHUNK_SIZE:-50M}"
@@ -119,6 +121,139 @@ send_notification() {
                 "$NTFY_TOPIC" >/dev/null 2>&1 || true
         fi
     fi
+}
+
+# Upload confirmation function with three-button dialog
+prompt_upload_confirmation() {
+    local file_path="$1"
+    local filename=$(basename "$file_path")
+    local size_bytes=$(get_file_size "$file_path")
+    local size_formatted=$(format_file_size "$size_bytes")
+    local delay_seconds="$CONFIRMATION_DELAY_SECONDS"
+    
+    log_message "INFO" "Showing upload confirmation dialog for: $filename ($size_formatted)"
+    log_message "INFO" "Dialog timeout: ${delay_seconds}s (default action: upload)"
+    
+    # Show notification first to inform user
+    send_notification "🎥 OBS Recording Ready" "$filename ($size_formatted) - Choose action in dialog"
+    
+    # Record start time for timing
+    local start_time=$(date +%s)
+    
+    # Create AppleScript with three clear buttons
+    local applescript="
+    try
+        -- Brief delay to let user see the notification
+        delay 2
+        
+        -- Show dialog with three clear options
+        set dialogResult to display dialog \"What would you like to do with $filename ($size_formatted)?\" ¬
+            with title \"🎥 OBS Upload Confirmation\" ¬
+            buttons {\"Delete File\", \"Keep Local\", \"Upload File\"} ¬
+            default button \"Upload File\" ¬
+            with icon note ¬
+            giving up after ($delay_seconds - 2)
+        
+        -- Handle button results
+        if button returned of dialogResult is \"Delete File\" then
+            return \"delete:clicked\"
+        else if button returned of dialogResult is \"Keep Local\" then
+            return \"keep:clicked\"
+        else if button returned of dialogResult is \"Upload File\" then
+            return \"upload:clicked\"
+        else if gave up of dialogResult is true then
+            -- Dialog timed out, default to upload
+            return \"upload:timeout\"
+        else
+            -- Fallback
+            return \"upload:fallback\"
+        end if
+        
+    on error errMsg number errNum
+        -- Handle specific error cases
+        if errNum is -128 then
+            -- User cancelled dialog (pressed Escape or closed dialog)
+            return \"keep:cancelled\"
+        else
+            -- Other errors, default to upload
+            return \"upload:error:\" & errNum
+        end if
+    end try
+    "
+    
+    # Run the AppleScript and get the result
+    local result=$(echo "$applescript" | osascript 2>/dev/null || echo "upload:script_error")
+    
+    # Calculate response time
+    local end_time=$(date +%s)
+    local response_time=$((end_time - start_time))
+    
+    # Parse result (format: action:method)
+    local action=$(echo "$result" | cut -d':' -f1)
+    local method=$(echo "$result" | cut -d':' -f2-)
+    
+    case "$action" in
+        "delete")
+            case "$method" in
+                "clicked")
+                    log_message "INFO" "✋ User clicked 'Delete File' button after ${response_time}s: $filename"
+                    ;;
+                *)
+                    log_message "INFO" "✋ User chose to delete file ($method): $filename"
+                    ;;
+            esac
+            
+            if rm "$file_path" 2>/dev/null; then
+                log_message "INFO" "🗑️  File successfully deleted: $filename"
+                send_notification "File Deleted" "Deleted: $filename"
+            else
+                log_message "ERROR" "❌ Failed to delete file: $filename"
+                send_notification "Delete Failed" "Could not delete: $filename" "critical"
+            fi
+            return 2  # Special return code for delete
+            ;;
+        "keep")
+            case "$method" in
+                "clicked")
+                    log_message "INFO" "📁 User clicked 'Keep Local' button after ${response_time}s: $filename"
+                    ;;
+                "cancelled")
+                    log_message "INFO" "❌ User cancelled dialog (Escape/close) after ${response_time}s: $filename"
+                    ;;
+                *)
+                    log_message "INFO" "📁 User chose to keep file local ($method): $filename"
+                    ;;
+            esac
+            
+            send_notification "File Kept Local" "Kept: $filename"
+            return 1  # Don't upload
+            ;;
+        "upload"|*)
+            case "$method" in
+                "clicked")
+                    log_message "INFO" "☁️  User clicked 'Upload File' button after ${response_time}s: $filename"
+                    ;;
+                "timeout")
+                    log_message "INFO" "⏰ Dialog timed out after ${delay_seconds}s, defaulting to upload: $filename"
+                    ;;
+                "error"*)
+                    local error_code=$(echo "$method" | cut -d':' -f2)
+                    log_message "WARNING" "⚠️  Dialog error (code: $error_code), defaulting to upload: $filename"
+                    ;;
+                "script_error")
+                    log_message "WARNING" "⚠️  AppleScript execution failed, defaulting to upload: $filename"
+                    ;;
+                "fallback")
+                    log_message "WARNING" "⚠️  Unexpected dialog result, defaulting to upload: $filename"
+                    ;;
+                *)
+                    log_message "INFO" "☁️  User chose to upload file ($method): $filename"
+                    ;;
+            esac
+            
+            return 0  # Proceed with upload
+            ;;
+    esac
 }
 
 # File size functions
@@ -331,9 +466,31 @@ handle_file_event() {
                 while true; do
                     if [ -f "$file_path" ]; then
                         if is_file_stable "$file_path"; then
-                            log_message "INFO" "File is stable, starting upload: $filename"
-                            upload_file "$file_path"
-                            break
+                            log_message "INFO" "File is stable: $filename"
+                            
+                            # Check if upload confirmation is enabled
+                            if [ "$ENABLE_UPLOAD_CONFIRMATION" = "true" ]; then
+                                prompt_upload_confirmation "$file_path"
+                                local result=$?
+                                case "$result" in
+                                    2) # Delete - already handled in function
+                                        break
+                                        ;;
+                                    1) # Keep local - already handled in function
+                                        break
+                                        ;;
+                                    0) # Upload
+                                        log_message "INFO" "Starting upload: $filename"
+                                        upload_file "$file_path"
+                                        break
+                                        ;;
+                                esac
+                            else
+                                # Original behavior - auto upload
+                                log_message "INFO" "Starting upload: $filename"
+                                upload_file "$file_path"
+                                break
+                            fi
                         fi
                     else
                         log_message "DEBUG" "File no longer exists: $filename"
