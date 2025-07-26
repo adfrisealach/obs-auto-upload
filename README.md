@@ -330,4 +330,4 @@ If you encounter issues:
 - Basic file monitoring and upload
 - macOS notifications
 - Auto-start service
-- Comprehensive logging 
+- Comprehensive logging

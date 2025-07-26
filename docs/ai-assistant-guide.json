@@ -266,8 +266,7 @@
       "main": "README.md",
       "quick_start": "docs/QUICK_START_GUIDE.md",
       "troubleshooting": "docs/TROUBLESHOOTING.md",
-      "ai_guide_json": "docs/ai-assistant-guide.json",
-      "ai_guide_yaml": "docs/ai-assistant-guide.yaml"
+      "ai_guide_json": "docs/ai-assistant-guide.json"
     },
     "service_file": "~/Library/LaunchAgents/com.user.obs-auto-upload.plist"
   },
@@ -288,4 +287,4 @@
     "chunk_size": "50MB chunks for efficient B2 uploads",
     "stability_detection": "90-second wait after file stops growing"
   }
-} 
+}

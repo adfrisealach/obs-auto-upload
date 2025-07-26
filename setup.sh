@@ -256,12 +256,6 @@ EOF
 test_setup() {
     print_status "Testing setup..."
     
-    # Check if script can run without errors
-    if "$SCRIPT_DIR/obs-auto-upload.sh" --help >/dev/null 2>&1; then
-        print_error "Script test failed"
-        return 1
-    fi
-    
     # Check if .env file is properly configured
     if [ ! -f "$SCRIPT_DIR/.env" ]; then
         print_error ".env file not found"
@@ -340,4 +334,4 @@ main() {
 }
 
 # Run main function
-main "$@" 
+main "$@"

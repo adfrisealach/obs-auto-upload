@@ -304,34 +304,6 @@ upload_file() {
     fi
 }
 
-# Background stability checker
-check_stability() {
-    while true; do
-        local files_to_remove=()
-        
-        for file_path in "${!file_first_seen[@]}"; do
-            if [ -f "$file_path" ]; then
-                if is_file_stable "$file_path"; then
-                    upload_file "$file_path"
-                fi
-            else
-                # File was deleted, mark for cleanup
-                files_to_remove+=("$file_path")
-                log_message "DEBUG" "File deleted, cleaning up tracking: $(basename "$file_path")"
-            fi
-        done
-        
-        # Clean up tracking for deleted files
-        for file_path in "${files_to_remove[@]}"; do
-            unset file_last_modified[$file_path]
-            unset file_first_seen[$file_path]
-            unset file_sizes[$file_path]
-        done
-        
-        sleep $CHECK_INTERVAL
-    done
-}
-
 # File event handler
 handle_file_event() {
     local file_path="$1"
@@ -339,7 +311,6 @@ handle_file_event() {
     local file_ext="${filename##*.}"
     
     log_message "DEBUG" "File event received: $file_path (ext: $file_ext)"
-    log_message "DEBUG" "Extensions check: '$EXTENSIONS' contains '$file_ext'?"
     
     # Only process files with correct extensions
     if [ -f "$file_path" ] && [[ " $EXTENSIONS " =~ " $file_ext " ]]; then
@@ -363,8 +334,6 @@ handle_file_event() {
                             log_message "INFO" "File is stable, starting upload: $filename"
                             upload_file "$file_path"
                             break
-                        else
-                            log_message "DEBUG" "File still growing or not stable: $filename"
                         fi
                     else
                         log_message "DEBUG" "File no longer exists: $filename"
@@ -441,49 +410,36 @@ cleanup() {
     if [ -n "$FSWATCH_PID" ] && kill -0 "$FSWATCH_PID" 2>/dev/null; then
         log_message "DEBUG" "Stopping fswatch process (PID: $FSWATCH_PID)"
         kill -TERM "$FSWATCH_PID" 2>/dev/null
-        # Give it time to terminate gracefully
         sleep 2
-        # Force kill if still running
         if kill -0 "$FSWATCH_PID" 2>/dev/null; then
             kill -KILL "$FSWATCH_PID" 2>/dev/null || true
         fi
-        # Wait for process to be reaped
         wait "$FSWATCH_PID" 2>/dev/null || true
     fi
     
-    # Kill any remaining fswatch processes as backup
     pkill -f "fswatch.*$WATCH_DIR" 2>/dev/null || true
     
     send_notification "OBS Auto-Upload Stopped" "Service has been stopped"
     exit 0
 }
 
-# Robust file system monitor using process substitution
+# File system monitor
 start_file_monitor() {
-    log_message "INFO" "Starting robust file system monitor..."
+    log_message "INFO" "Starting file system monitor..."
     
-    # Use process substitution to avoid pipeline subshell issues
-    # This approach maintains direct control over the fswatch process
     while IFS= read -r -d '' filepath; do
         log_message "DEBUG" "Raw fswatch event: '$filepath'"
         
-        # Simple validation - check if file exists and has correct extension
         if [[ -f "$filepath" ]]; then
             local filename=$(basename "$filepath")
             local file_ext="${filename##*.}"
             
-            # Check if it's in our watch directory and has correct extension
             if [[ "$filepath" == "$WATCH_DIR"/* ]] && [[ " $EXTENSIONS " =~ " $file_ext " ]]; then
                 log_message "INFO" "New file detected: $filename"
                 handle_file_event "$filepath"
-            else
-                log_message "DEBUG" "Skipping file: $filename (extension: $file_ext)"
             fi
-        else
-            log_message "DEBUG" "File no longer exists: $filepath"
         fi
     done < <(
-        # Start fswatch with optimal settings for macOS
         exec fswatch -0 -r \
             --event=Created \
             --event=MovedTo \
@@ -492,45 +448,6 @@ start_file_monitor() {
     )
     
     log_message "ERROR" "File system monitor exited unexpectedly"
-}
-
-# Alternative implementation using background process and FIFO (fallback if needed)
-start_file_monitor_with_fifo() {
-    log_message "INFO" "Starting file monitor with FIFO approach..."
-    
-    # Create temporary FIFO
-    local fifo_path="/tmp/obs-fswatch-$$.fifo"
-    mkfifo "$fifo_path"
-    
-    # Cleanup FIFO on exit
-    trap "rm -f '$fifo_path'" EXIT
-    
-    # Start fswatch as background process
-    fswatch -0 -r \
-        --event=Created \
-        --event=MovedTo \
-        --latency=1.0 \
-        "$WATCH_DIR" > "$fifo_path" 2>/dev/null &
-    
-    FSWATCH_PID=$!
-    log_message "DEBUG" "Started fswatch with PID: $FSWATCH_PID"
-    
-    # Read from FIFO
-    while IFS= read -r -d '' filepath < "$fifo_path"; do
-        log_message "DEBUG" "FIFO event: '$filepath'"
-        
-        if [[ -f "$filepath" ]]; then
-            local filename=$(basename "$filepath")
-            local file_ext="${filename##*.}"
-            
-            if [[ "$filepath" == "$WATCH_DIR"/* ]] && [[ " $EXTENSIONS " =~ " $file_ext " ]]; then
-                log_message "INFO" "New file detected: $filename"
-                handle_file_event "$filepath"
-            fi
-        fi
-    done
-    
-    log_message "ERROR" "FIFO monitor exited unexpectedly"
 }
 
 # Main execution
@@ -553,7 +470,6 @@ main() {
     send_notification "OBS Auto-Upload Started" "Monitoring: $WATCH_DIR"
     
     # Start the file monitor
-    # The process substitution approach should be stable and not require restarts
     log_message "INFO" "Starting file system monitor..."
     start_file_monitor
     
@@ -565,4 +481,4 @@ main() {
 # Run main function if script is executed directly
 if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
     main "$@"
-fi 
+fi
