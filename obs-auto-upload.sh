@@ -123,7 +123,7 @@ send_notification() {
     fi
 }
 
-# Upload confirmation function with notification and cancel button
+# Upload confirmation function with macOS notification and dialog choice
 prompt_upload_confirmation() {
     local file_path="$1"
     local filename=$(basename "$file_path")
@@ -131,67 +131,54 @@ prompt_upload_confirmation() {
     local size_formatted=$(format_file_size "$size_bytes")
     local delay_seconds="$CONFIRMATION_DELAY_SECONDS"
     
-    log_message "INFO" "Prompting user for upload confirmation: $filename ($size_formatted)"
+    log_message "INFO" "Showing upload confirmation for: $filename ($size_formatted)"
     
-    # Create a temporary file to track user response
-    local response_file="/tmp/obs_upload_response_$$"
-    local cancel_file="/tmp/obs_upload_cancel_$$"
+    # Show notification first to inform user
+    send_notification "🎥 OBS Recording Ready" "$filename ($size_formatted) - Upload starting in $delay_seconds seconds"
     
-    # Send notification with cancel action
-    local notification_script="
-    on run
+    # Create AppleScript that shows a dialog with choice after a brief delay
+    local applescript="
+    tell application \"System Events\"
         try
-            display notification \"$filename ($size_formatted) will upload in $delay_seconds seconds\" with title \"OBS Recording Ready\" subtitle \"Click to cancel upload\"
+            -- Brief delay to let user see the notification
+            delay 2
+            
+            -- Show dialog with choice buttons
+            set dialogResult to display dialog \"Upload $filename ($size_formatted) to cloud storage?\" ¬
+                with title \"🎥 OBS Upload Confirmation\" ¬
+                buttons {\"Cancel\", \"Upload\"} ¬
+                default button \"Upload\" ¬
+                with icon note ¬
+                giving up after ($delay_seconds - 2)
+            
+            -- Check the result
+            if button returned of dialogResult is \"Cancel\" then
+                return \"cancelled\"
+            else if button returned of dialogResult is \"Upload\" then
+                return \"proceed\"
+            else
+                -- Dialog timed out (gave up), proceed with upload
+                return \"proceed\"
+            end if
+            
+        on error errMsg
+            -- If dialog fails or is cancelled, default to proceed
+            return \"proceed\"
         end try
-    end run
+    end tell
     "
     
-    # Show the notification
-    echo "$notification_script" | osascript 2>/dev/null || true
+    # Run the AppleScript and get the result
+    local result=$(echo "$applescript" | osascript 2>/dev/null || echo "proceed")
     
-    # Create a background process to handle the cancel mechanism
-    # We'll use a simple file-based approach since macOS notifications don't support interactive buttons easily
-    (
-        echo "Waiting for user response for $delay_seconds seconds..."
-        echo "To cancel upload, create file: $cancel_file"
-        echo "Press Ctrl+C in this terminal to cancel upload"
-        
-        # Wait for the specified delay or until cancel file is created
-        local elapsed=0
-        while [ $elapsed -lt $delay_seconds ]; do
-            if [ -f "$cancel_file" ]; then
-                echo "cancelled" > "$response_file"
-                exit 0
-            fi
-            sleep 1
-            elapsed=$((elapsed + 1))
-        done
-        
-        # If we get here, timeout occurred
-        echo "proceed" > "$response_file"
-    ) &
-    
-    local wait_pid=$!
-    
-    # Wait for the background process to complete
-    wait $wait_pid
-    
-    # Check the response
-    local response="proceed"  # default
-    if [ -f "$response_file" ]; then
-        response=$(cat "$response_file")
-        rm -f "$response_file"
-    fi
-    rm -f "$cancel_file"
-    
-    case "$response" in
+    case "$result" in
         "cancelled")
             log_message "INFO" "User cancelled upload: $filename"
-            send_notification "Upload Cancelled" "Keeping local file: $filename"
+            send_notification "Upload Cancelled" "Kept local: $filename"
             return 1  # Don't upload
             ;;
         *)
-            log_message "INFO" "User confirmed upload (or timeout): $filename"
+            log_message "INFO" "Upload confirmed (timeout or user approval): $filename"
             return 0  # Proceed with upload
             ;;
     esac

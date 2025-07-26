@@ -141,11 +141,12 @@ The upload confirmation feature provides user control over which recordings get 
 
 When `ENABLE_UPLOAD_CONFIRMATION=true`:
 
-1. **File becomes stable** → Notification appears: *"video.mkv (2.3GB) will upload in 60 seconds"*
-2. **User has options:**
-   - **Do nothing** → File uploads automatically after countdown
-   - **Press Ctrl+C in terminal** → Upload is cancelled, file stays local
-   - **Create cancel file** → `touch /tmp/obs_upload_cancel_[PID]` to cancel
+1. **File becomes stable** → Notification appears: *"video.mkv (2.3GB) - Upload starting in 60 seconds"*
+2. **Dialog appears** with clear choice buttons: **Cancel** or **Upload**
+3. **User has options:**
+   - **Click "Cancel"** → Upload is cancelled, file stays local
+   - **Click "Upload"** → File uploads immediately
+   - **Do nothing** → Dialog times out, file uploads automatically
 
 ### Configuration
 
