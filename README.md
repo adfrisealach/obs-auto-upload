@@ -8,6 +8,7 @@ Automatically upload your OBS screen recordings to Backblaze B2 cloud storage wi
 - 🔄 **Automatic Upload**: Uses rclone with optimized settings for fast, reliable uploads
 - 🗑️ **Safe Deletion**: Verifies uploads before deleting local files
 - 📱 **Notifications**: macOS notifications and optional NTFY push notifications
+- ✋ **Upload Confirmation**: Interactive dialog with options to upload, keep, or delete recordings
 - 🔧 **Configurable**: Easy-to-use `.env` configuration file
 - 🚀 **Auto-Start**: Runs automatically on login using macOS launchd
 - 📊 **Comprehensive Logging**: Detailed logs for monitoring and troubleshooting
@@ -16,9 +17,10 @@ Automatically upload your OBS screen recordings to Backblaze B2 cloud storage wi
 
 1. **File Monitoring**: Uses `fswatch` to detect new `.mkv` files in your OBS directory
 2. **Stability Detection**: Waits for files to stop growing (configurable timeout)
-3. **Upload**: Uses `rclone` with optimized settings for Backblaze B2
-4. **Verification**: Confirms file exists remotely with correct size
-5. **Cleanup**: Safely deletes local file after successful upload
+3. **Upload Confirmation** (optional): Shows dialog with options to upload, keep, or delete
+4. **Upload**: Uses `rclone` with optimized settings for Backblaze B2
+5. **Verification**: Confirms file exists remotely with correct size
+6. **Cleanup**: Safely deletes local file after successful upload
 
 ## Requirements
 
@@ -113,6 +115,10 @@ EXTENSIONS="mkv mp4 mov avi"
 # Stability timeout (seconds to wait after file stops growing)
 STABILITY_TIMEOUT=45
 
+# Upload confirmation
+ENABLE_UPLOAD_CONFIRMATION=true
+CONFIRMATION_DELAY_SECONDS=60
+
 # Upload optimization
 UPLOAD_TRANSFERS=6
 CHUNK_SIZE="50M"
@@ -126,6 +132,44 @@ VERIFY_UPLOAD=true
 ENABLE_NOTIFICATIONS=true
 NTFY_TOPIC="https://ntfy.sh/your-topic"  # Optional
 ```
+
+## Upload Confirmation
+
+The upload confirmation feature provides user control over which recordings get uploaded to prevent unwanted uploads.
+
+### How It Works
+
+When `ENABLE_UPLOAD_CONFIRMATION=true`:
+
+1. **File becomes stable** → Notification appears: *"video.mkv (2.3GB) - Choose action in dialog"*
+2. **Dialog appears** with three clear options:
+   - **Delete File** - Delete the recording immediately
+   - **Keep Local** - Keep the file locally without uploading
+   - **Upload File** - Upload to cloud storage (default)
+3. **User has options:**
+   - **Click "Delete File"** → File is deleted immediately
+   - **Click "Keep Local"** → File stays on local storage only
+   - **Click "Upload File"** → File uploads immediately
+   - **Press Escape/Close dialog** → File stays local
+   - **Do nothing** → Dialog times out, file uploads automatically
+
+### Configuration
+
+```bash
+# Enable upload confirmation (true/false)
+ENABLE_UPLOAD_CONFIRMATION=true
+
+# Delay before automatic upload (seconds)
+CONFIRMATION_DELAY_SECONDS=60
+```
+
+### Use Cases
+
+- **Prevent private recordings** from being uploaded
+- **Delete unwanted recordings** immediately
+- **Review recordings** before cloud storage
+- **Save bandwidth** for important files only
+- **Manual control** over automated process
 
 ## Usage
 
@@ -176,7 +220,9 @@ Added to Monitoring Queue
        ↓
 Wait for File Stability (45s default)
        ↓
-Upload to Backblaze B2
+Upload Confirmation Dialog (if enabled)
+       ↓
+Upload to Backblaze B2 (if confirmed)
        ↓
 Verify Upload Success
        ↓
@@ -324,6 +370,11 @@ If you encounter issues:
 4. Create an issue with detailed information
 
 ## Changelog
+
+### v1.1.0
+- Added three-button upload confirmation dialog
+- Enhanced logging with detailed user actions
+- Fixed dialog cancellation handling
 
 ### v1.0.0
 - Initial release
