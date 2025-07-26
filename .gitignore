@@ -1,0 +1,33 @@
+# Environment and configuration files
+.env
+*.log
+
+# macOS system files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Backup files
+*.backup
+*~
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+tmp/
+temp/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# User-specific files
+user-config.sh
