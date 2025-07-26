@@ -1,0 +1,291 @@
+{
+  "project": {
+    "name": "OBS Auto-Upload",
+    "description": "Automatically upload OBS screen recordings to Backblaze B2 cloud storage with intelligent file monitoring, stability detection, and safe deletion",
+    "version": "1.0.0",
+    "platform": "macOS",
+    "license": "MIT",
+    "repository": "https://github.com/adfrisealach/obs-auto-upload"
+  },
+  "ai_assistant_instructions": {
+    "purpose": "Help users set up and configure OBS auto-upload to Backblaze B2",
+    "target_audience": "macOS users with OBS Studio who want automated cloud backup",
+    "complexity_level": "beginner-friendly with automated setup",
+    "estimated_setup_time": "15 minutes"
+  },
+  "prerequisites": {
+    "required": [
+      {
+        "item": "macOS 14+",
+        "check_command": "sw_vers -productVersion",
+        "validation": "version >= 14.0"
+      },
+      {
+        "item": "Homebrew",
+        "check_command": "brew --version",
+        "install_url": "https://brew.sh/",
+        "validation": "command exists"
+      },
+      {
+        "item": "OBS Studio",
+        "description": "For creating recordings to upload",
+        "install_url": "https://obsproject.com/"
+      },
+      {
+        "item": "Backblaze B2 Account",
+        "description": "Cloud storage service (10GB free tier)",
+        "signup_url": "https://www.backblaze.com/b2/cloud-storage.html"
+      }
+    ],
+    "permissions": [
+      {
+        "type": "Full Disk Access",
+        "target": "Terminal.app",
+        "path": "System Settings → Privacy & Security → Full Disk Access",
+        "reason": "Required for file system monitoring",
+        "critical": true
+      }
+    ]
+  },
+  "setup_workflow": {
+    "automated": {
+      "description": "Recommended approach using setup script",
+      "steps": [
+        {
+          "step": 1,
+          "action": "clone_repository",
+          "command": "git clone https://github.com/adfrisealach/obs-auto-upload.git",
+          "description": "Download the project files"
+        },
+        {
+          "step": 2,
+          "action": "navigate_to_directory",
+          "command": "cd obs-auto-upload",
+          "description": "Enter project directory"
+        },
+        {
+          "step": 3,
+          "action": "run_setup_script",
+          "command": "./setup.sh",
+          "description": "Execute automated setup",
+          "interactive": true,
+          "requirements": ["Backblaze B2 credentials ready"]
+        },
+        {
+          "step": 4,
+          "action": "grant_permissions",
+          "description": "Add Terminal to Full Disk Access in System Settings",
+          "manual": true,
+          "critical": true
+        }
+      ]
+    },
+    "manual": {
+      "description": "Step-by-step manual configuration",
+      "steps": [
+        {
+          "step": 1,
+          "action": "install_dependencies",
+          "command": "brew install rclone fswatch",
+          "description": "Install required tools"
+        },
+        {
+          "step": 2,
+          "action": "configure_rclone",
+          "command": "rclone config",
+          "description": "Set up Backblaze B2 remote",
+          "interactive": true,
+          "details": {
+            "remote_name": "b2-remote",
+            "storage_type": "Backblaze B2",
+            "required_info": ["Application Key ID", "Application Key"]
+          }
+        },
+        {
+          "step": 3,
+          "action": "create_config",
+          "command": "cp env.example .env",
+          "description": "Create configuration file"
+        },
+        {
+          "step": 4,
+          "action": "edit_config",
+          "file": ".env",
+          "description": "Customize settings for your environment"
+        },
+        {
+          "step": 5,
+          "action": "make_executable",
+          "command": "chmod +x obs-auto-upload.sh",
+          "description": "Set script permissions"
+        }
+      ]
+    }
+  },
+  "configuration": {
+    "file": ".env",
+    "template": "env.example",
+    "required_settings": [
+      {
+        "key": "REMOTE_NAME",
+        "default": "b2-remote",
+        "description": "rclone remote name for Backblaze B2",
+        "validation": "must match rclone config"
+      },
+      {
+        "key": "BUCKET_NAME",
+        "default": "your-bucket-name",
+        "description": "Backblaze B2 bucket name",
+        "user_input_required": true
+      },
+      {
+        "key": "WATCH_DIR",
+        "default": "/Users/yourusername/Movies/OBS",
+        "description": "Directory where OBS saves recordings",
+        "auto_replace": "yourusername with actual username"
+      },
+      {
+        "key": "REMOTE_BASE_PATH",
+        "default": "obs-recordings/",
+        "description": "Folder path within bucket"
+      }
+    ],
+    "optional_settings": [
+      {
+        "key": "EXTENSIONS",
+        "default": "mkv mp4 mov avi",
+        "description": "File extensions to monitor"
+      },
+      {
+        "key": "STABILITY_TIMEOUT",
+        "default": "90",
+        "description": "Seconds to wait after file stops growing"
+      },
+      {
+        "key": "DELETE_AFTER_UPLOAD",
+        "default": "true",
+        "description": "Delete local files after successful upload"
+      },
+      {
+        "key": "ENABLE_NOTIFICATIONS",
+        "default": "true",
+        "description": "Show macOS notifications"
+      },
+      {
+        "key": "NTFY_TOPIC",
+        "default": "https://ntfy.sh/your-unique-topic-id",
+        "description": "Optional push notifications",
+        "user_input_required": true,
+        "optional": true
+      }
+    ]
+  },
+  "usage": {
+    "automatic": {
+      "description": "Service runs automatically on login",
+      "setup_command": "launchctl load ~/Library/LaunchAgents/com.user.obs-auto-upload.plist",
+      "status_command": "launchctl list | grep obs-auto-upload"
+    },
+    "manual": {
+      "description": "Run script manually for testing",
+      "command": "./obs-auto-upload.sh"
+    },
+    "workflow": [
+      "User records with OBS",
+      "Script detects new .mkv/.mp4 file",
+      "Waits for file stability (90s default)",
+      "Uploads to Backblaze B2",
+      "Verifies upload success",
+      "Deletes local file",
+      "Sends notification"
+    ]
+  },
+  "monitoring": {
+    "logs": {
+      "application": "~/logs/obs-backup.log",
+      "service_output": "~/logs/obs-auto-upload.out",
+      "service_errors": "~/logs/obs-auto-upload.err"
+    },
+    "commands": {
+      "view_recent_activity": "tail -20 ~/logs/obs-backup.log",
+      "follow_logs": "tail -f ~/logs/obs-backup.log",
+      "check_service": "launchctl list | grep obs-auto-upload"
+    }
+  },
+  "troubleshooting": {
+    "common_issues": [
+      {
+        "issue": "Files not being detected",
+        "symptoms": ["Script runs but no notifications", "No uploads happening"],
+        "solutions": [
+          "Grant Terminal Full Disk Access in System Settings",
+          "Verify OBS saves to correct directory",
+          "Test fswatch: fswatch -1 ~/Movies/OBS"
+        ]
+      },
+      {
+        "issue": "Upload failures",
+        "symptoms": ["Upload failed notifications", "Files not appearing in bucket"],
+        "solutions": [
+          "Check internet connection",
+          "Verify rclone config: rclone lsd b2-remote:bucket-name",
+          "Check logs for specific errors"
+        ]
+      },
+      {
+        "issue": "Service not starting",
+        "symptoms": ["No automatic monitoring", "Service not in launchctl list"],
+        "solutions": [
+          "Restart service: launchctl unload/load plist file",
+          "Check service logs for errors",
+          "Verify plist file exists"
+        ]
+      }
+    ],
+    "diagnostic_commands": [
+      {
+        "purpose": "Test rclone connection",
+        "command": "rclone lsd b2-remote:your-bucket-name"
+      },
+      {
+        "purpose": "Test file monitoring",
+        "command": "fswatch -1 ~/Movies/OBS"
+      },
+      {
+        "purpose": "Check service status",
+        "command": "launchctl list | grep obs-auto-upload"
+      }
+    ]
+  },
+  "file_structure": {
+    "main_script": "obs-auto-upload.sh",
+    "setup_script": "setup.sh",
+    "config_template": "env.example",
+    "config_file": ".env",
+    "documentation": {
+      "main": "README.md",
+      "quick_start": "docs/QUICK_START_GUIDE.md",
+      "troubleshooting": "docs/TROUBLESHOOTING.md",
+      "ai_guide_json": "docs/ai-assistant-guide.json",
+      "ai_guide_yaml": "docs/ai-assistant-guide.yaml"
+    },
+    "service_file": "~/Library/LaunchAgents/com.user.obs-auto-upload.plist"
+  },
+  "ai_prompts": {
+    "setup_assistance": "I can help you set up OBS Auto-Upload to automatically backup your recordings to Backblaze B2. This involves installing dependencies, configuring rclone, and setting up the monitoring service. Do you have a Backblaze B2 account ready?",
+    "troubleshooting": "I can help diagnose issues with OBS Auto-Upload. Common problems include file detection issues (usually permissions), upload failures (network/credentials), or service startup problems. What specific issue are you experiencing?",
+    "configuration": "I can help you customize the OBS Auto-Upload configuration. The main settings are in the .env file and include watch directory, upload settings, and notification preferences. What would you like to configure?"
+  },
+  "security_considerations": [
+    "Credentials stored securely by rclone in ~/.config/rclone/rclone.conf",
+    ".env file should never be committed to version control",
+    "NTFY topics should be private/unique to prevent spam",
+    "Full Disk Access permission required but limited to Terminal app"
+  ],
+  "performance_notes": {
+    "upload_optimization": "Configured for ~20Mbps connections with 18M bandwidth limit",
+    "concurrent_transfers": "6 parallel uploads by default",
+    "chunk_size": "50MB chunks for efficient B2 uploads",
+    "stability_detection": "90-second wait after file stops growing"
+  }
+} 

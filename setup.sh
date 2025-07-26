@@ -160,7 +160,7 @@ create_env_file() {
     cp "$SCRIPT_DIR/env.example" "$SCRIPT_DIR/.env"
     
     # Update with user-specific values
-    sed -i '' 's|WATCH_DIR="/Users/afrazier/Movies/OBS"|WATCH_DIR="'"$HOME"'/Movies/OBS"|g' "$SCRIPT_DIR/.env"
+    sed -i '' 's|WATCH_DIR="/Users/yourusername/Movies/OBS"|WATCH_DIR="'"$HOME"'/Movies/OBS"|g' "$SCRIPT_DIR/.env"
     sed -i '' 's|LOG_FILE="$HOME/logs/obs-backup.log"|LOG_FILE="'"$HOME"'/logs/obs-backup.log"|g' "$SCRIPT_DIR/.env"
     
     print_success ".env file created"
