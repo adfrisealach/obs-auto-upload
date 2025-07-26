@@ -36,6 +36,8 @@ MIN_FILE_SIZE_MB="${MIN_FILE_SIZE_MB:-1}"
 STABILITY_TIMEOUT="${STABILITY_TIMEOUT:-45}"
 MAX_WAIT_TIME="${MAX_WAIT_TIME:-7200}"
 CHECK_INTERVAL="${CHECK_INTERVAL:-10}"
+ENABLE_UPLOAD_CONFIRMATION="${ENABLE_UPLOAD_CONFIRMATION:-false}"
+CONFIRMATION_DELAY_SECONDS="${CONFIRMATION_DELAY_SECONDS:-60}"
 UPLOAD_TRANSFERS="${UPLOAD_TRANSFERS:-6}"
 UPLOAD_CHECKERS="${UPLOAD_CHECKERS:-8}"
 CHUNK_SIZE="${CHUNK_SIZE:-50M}"
@@ -119,6 +121,80 @@ send_notification() {
                 "$NTFY_TOPIC" >/dev/null 2>&1 || true
         fi
     fi
+}
+
+# Upload confirmation function with notification and cancel button
+prompt_upload_confirmation() {
+    local file_path="$1"
+    local filename=$(basename "$file_path")
+    local size_bytes=$(get_file_size "$file_path")
+    local size_formatted=$(format_file_size "$size_bytes")
+    local delay_seconds="$CONFIRMATION_DELAY_SECONDS"
+    
+    log_message "INFO" "Prompting user for upload confirmation: $filename ($size_formatted)"
+    
+    # Create a temporary file to track user response
+    local response_file="/tmp/obs_upload_response_$$"
+    local cancel_file="/tmp/obs_upload_cancel_$$"
+    
+    # Send notification with cancel action
+    local notification_script="
+    on run
+        try
+            display notification \"$filename ($size_formatted) will upload in $delay_seconds seconds\" with title \"OBS Recording Ready\" subtitle \"Click to cancel upload\"
+        end try
+    end run
+    "
+    
+    # Show the notification
+    echo "$notification_script" | osascript 2>/dev/null || true
+    
+    # Create a background process to handle the cancel mechanism
+    # We'll use a simple file-based approach since macOS notifications don't support interactive buttons easily
+    (
+        echo "Waiting for user response for $delay_seconds seconds..."
+        echo "To cancel upload, create file: $cancel_file"
+        echo "Press Ctrl+C in this terminal to cancel upload"
+        
+        # Wait for the specified delay or until cancel file is created
+        local elapsed=0
+        while [ $elapsed -lt $delay_seconds ]; do
+            if [ -f "$cancel_file" ]; then
+                echo "cancelled" > "$response_file"
+                exit 0
+            fi
+            sleep 1
+            elapsed=$((elapsed + 1))
+        done
+        
+        # If we get here, timeout occurred
+        echo "proceed" > "$response_file"
+    ) &
+    
+    local wait_pid=$!
+    
+    # Wait for the background process to complete
+    wait $wait_pid
+    
+    # Check the response
+    local response="proceed"  # default
+    if [ -f "$response_file" ]; then
+        response=$(cat "$response_file")
+        rm -f "$response_file"
+    fi
+    rm -f "$cancel_file"
+    
+    case "$response" in
+        "cancelled")
+            log_message "INFO" "User cancelled upload: $filename"
+            send_notification "Upload Cancelled" "Keeping local file: $filename"
+            return 1  # Don't upload
+            ;;
+        *)
+            log_message "INFO" "User confirmed upload (or timeout): $filename"
+            return 0  # Proceed with upload
+            ;;
+    esac
 }
 
 # File size functions
@@ -331,8 +407,21 @@ handle_file_event() {
                 while true; do
                     if [ -f "$file_path" ]; then
                         if is_file_stable "$file_path"; then
-                            log_message "INFO" "File is stable, starting upload: $filename"
-                            upload_file "$file_path"
+                            log_message "INFO" "File is stable: $filename"
+                            
+                            # Check if upload confirmation is enabled
+                            if [ "$ENABLE_UPLOAD_CONFIRMATION" = "true" ]; then
+                                if prompt_upload_confirmation "$file_path"; then
+                                    log_message "INFO" "Starting upload: $filename"
+                                    upload_file "$file_path"
+                                else
+                                    log_message "INFO" "Upload cancelled by user: $filename"
+                                fi
+                            else
+                                # Original behavior - auto upload
+                                log_message "INFO" "Starting upload: $filename"
+                                upload_file "$file_path"
+                            fi
                             break
                         fi
                     else

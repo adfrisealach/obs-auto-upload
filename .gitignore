@@ -1,6 +1,7 @@
 # Environment and configuration files
 .env
 *.log
+env.text
 
 # macOS system files
 .DS_Store
